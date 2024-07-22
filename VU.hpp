@@ -1,45 +1,40 @@
 #ifndef VU_HPP
 #define VU_HPP
 
-#include "DLU.hpp"
 #include "CU.hpp"
+#include "DLU.hpp"
+#include "L2.hpp"
+
+#define CEIL(X, Y) ((X + Y - 1) / Y)
 
 class VU
 {
 public:
-    VU(std::vector<int8_t> &L2_cache, DLU &L1_cache, CU &psb)
-        : L2_cache(L2_cache), L1_cache(L1_cache), PSB_cache(psb) {}
+    VU(CU &CU, DLU &DLU, L2 &L2) : PSB(CU), L1(DLU), L2(L2) {}
 
-    // PSB transfer (H1, W1, Co1)th (M, N) = (H0*W0, Co0) to Feature(H, W, Co)
-    void loadOut(std::vector<int8_t> &res, size_t hi, size_t wj, size_t cok,
-                 size_t H0, size_t W0, size_t Co0,
-                 size_t H, size_t W, size_t Co)
+    // PSB transfer (H0,W0,Co0) to std::vector<uint8_t> res
+    void LoadOut(std::vector<uint8_t> &res, size_t i, size_t j, size_t oi,
+                 size_t H, size_t W, size_t Co, size_t H0, size_t W0, size_t C0, size_t Co0)
     {
-        // M = H0 * W0
-        // N = Co0
-        // PSB: M * N
-        // Feature: H0 * W0 * Co0
-        for (size_t i = 0; i < H0; ++i)
-            for (size_t j = 0; j < W0; ++j)
-                for (size_t k = 0; k < Co0; ++k)
-                {
-                    auto H_i = H0 * hi + i;
-                    auto W_j = W0 * wj + j;
-                    auto C_k = Co0 * cok + k;
-                    if (H_i < H && W_j < W && C_k < Co)
-                        res.at(H_i * W * Co + W_j * Co + C_k) =
-                            PSB_cache.getPSB()[(i * W0 + j) * Co0 + k];
-                }
+        for (size_t sub_i = 0; sub_i < H0; ++sub_i)
+            for (size_t sub_j = 0; sub_j < W0; ++sub_j)
+                for (size_t co_i = 0; co_i < CEIL(Co0, C0); ++co_i)
+                    for (size_t sub_k = 0; sub_k < C0; ++sub_k)
+                    {
+                        auto im_row = H0 * i + sub_i;
+                        auto im_col = W0 * j + sub_j;
+                        auto im_ch = (Co0 * oi) + co_i * C0 + sub_k;
+                        if (im_row < H && im_col < W && im_ch < Co)
+                            // See CU::matmul for details on how (H0,W0,Co0) is stored in PSB
+                            res.at(im_row * W * Co + im_col * Co + im_ch) =
+                                PSB.getPSB()[(sub_i * W0 + sub_j) * CEIL(Co0, C0) + co_i][sub_k];
+                    }
     }
 
-    // TODO: implement the following functions
-    void loadtoL2() {}
-    void loadtoL1() {}
-
 private:
-    std::vector<int8_t> &L2_cache;
-    DLU &L1_cache;
-    CU &PSB_cache;
+    CU &PSB;
+    DLU &L1;
+    L2 &L2;
 };
 
 #endif // VU_HPP
